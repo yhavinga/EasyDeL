@@ -200,8 +200,14 @@ def easystate_to_torch(
     for key, tensor in pbar:
         if match_keywords(key, transpose_needed, transpose_not_needed):
             tensor = tensor.T
-        tensor = tensor.astype(get_dtype(dtype))
-        torch_state_dict[key.replace(".kernel", ".weight").replace(".embedding", ".weight")] = torch.from_numpy(tensor)
+        if tensor.dtype == jnp.bfloat16:
+            # convert via float32 to avoid from_numpy's unsupported bfloat16 conversion
+            tensor = tensor.astype(jnp.float32)
+            tensor_torch = torch.from_numpy(tensor).to(torch.bfloat16)
+        else:
+            tensor = tensor.astype(get_dtype(dtype))
+            tensor_torch = torch.from_numpy(tensor)
+        torch_state_dict[key.replace(".kernel", ".weight").replace(".embedding", ".weight")] = tensor_torch
     return torch_state_dict
 
 

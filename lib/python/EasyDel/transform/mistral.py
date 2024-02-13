@@ -110,63 +110,38 @@ def mistral_convert_hf_to_flax_load(checkpoints_dir, config: MistralConfig,
         return jax_weights
 
 
-def mistral_convert_hf_to_flax(state_dict, config: MistralConfig,
-                               device):
+def mistral_convert_hf_to_flax(state_dict, config: MistralConfig, device):
+    def convert_tensor(tensor):
+        tensor_dtype = tensor.dtype
+        if tensor_dtype == torch.bfloat16:
+            tensor = tensor.float()
+        return jnp.asarray(tensor.cpu().numpy(), dtype=jnp.bfloat16 if tensor_dtype == torch.bfloat16 else None)
+
     with jax.default_device(device):
         jax_weights = {
             "model": {
-                "embed_tokens": {"embedding": state_dict["model.embed_tokens.weight"].cpu().numpy()},
-                "norm": {"kernel": state_dict["model.norm.weight"].cpu().numpy()},
+                "embed_tokens": {"embedding": convert_tensor(state_dict["model.embed_tokens.weight"])},
+                "norm": {"kernel": convert_tensor(state_dict["model.norm.weight"])},
                 "layers": {
                     f"{layer}": {
                         "self_attn": {
-                            "q_proj": {
-                                "kernel": state_dict[
-                                    f"model.layers.{layer}.self_attn.q_proj.weight"].cpu().numpy().transpose()
-                            },
-                            "k_proj": {
-                                "kernel": state_dict[
-                                    f"model.layers.{layer}.self_attn.k_proj.weight"].cpu().numpy().transpose()
-                            },
-                            "v_proj": {
-                                "kernel": state_dict[
-                                    f"model.layers.{layer}.self_attn.v_proj.weight"].cpu().numpy().transpose()
-                            },
-                            "o_proj": {
-                                "kernel": state_dict[
-                                    f"model.layers.{layer}.self_attn.o_proj.weight"].cpu().numpy().transpose()
-                            },
+                            "q_proj": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.self_attn.q_proj.weight"].transpose(0, 1))},
+                            "k_proj": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.self_attn.k_proj.weight"].transpose(0, 1))},
+                            "v_proj": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.self_attn.v_proj.weight"].transpose(0, 1))},
+                            "o_proj": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.self_attn.o_proj.weight"].transpose(0, 1))},
                         },
                         "mlp": {
-                            "gate_proj": {
-                                "kernel": state_dict[f"model.layers.{layer}.mlp.gate_proj.weight"]
-                                .cpu().numpy()
-                                .transpose()
-                            },
-                            "down_proj": {
-                                "kernel": state_dict[f"model.layers.{layer}.mlp.down_proj.weight"]
-                                .cpu().numpy()
-                                .transpose()
-                            },
-                            "up_proj": {
-                                "kernel": state_dict[f"model.layers.{layer}.mlp.up_proj.weight"]
-                                .cpu().numpy()
-                                .transpose()
-                            },
+                            "gate_proj": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.mlp.gate_proj.weight"].transpose(0, 1))},
+                            "down_proj": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.mlp.down_proj.weight"].transpose(0, 1))},
+                            "up_proj": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.mlp.up_proj.weight"].transpose(0, 1))},
                         },
-                        "input_layernorm": {
-                            "kernel": state_dict[f"model.layers.{layer}.input_layernorm.weight"].cpu().numpy()
-                        },
-                        "post_attention_layernorm": {
-                            "kernel": state_dict[
-                                f"model.layers.{layer}.post_attention_layernorm.weight"
-                            ].cpu().numpy()
-                        },
+                        "input_layernorm": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.input_layernorm.weight"])},
+                        "post_attention_layernorm": {"kernel": convert_tensor(state_dict[f"model.layers.{layer}.post_attention_layernorm.weight"])},
                     }
                     for layer in range(config.num_hidden_layers)
                 },
             },
-            "lm_head": {"kernel": state_dict["lm_head.weight"].cpu().numpy().transpose()},
+            "lm_head": {"kernel": convert_tensor(state_dict["lm_head.weight"].transpose(0, 1))},
         }
 
         return jax_weights
